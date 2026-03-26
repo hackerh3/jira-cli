@@ -23,6 +23,8 @@ type JQL struct {
 	orderBy string
 }
 
+var orderByRegex = regexp.MustCompile(`(?i)\sORDER\s+BY\s`)
+
 // NewJQL initializes jql query builder.
 func NewJQL(project string) *JQL {
 	return &JQL{
@@ -123,9 +125,9 @@ func (j *JQL) In(field string, value ...string) *JQL {
 	if field != "" && n > 0 {
 		var q strings.Builder
 
-		q.WriteString(fmt.Sprintf("%s IN (", field))
+		_, _ = fmt.Fprintf(&q, "%s IN (", field)
 		for i, v := range value {
-			q.WriteString(fmt.Sprintf("%q", v))
+			_, _ = fmt.Fprintf(&q, "%q", v)
 			if i != n-1 {
 				q.WriteString(", ")
 			}
@@ -143,9 +145,9 @@ func (j *JQL) NotIn(field string, value ...string) *JQL {
 	if field != "" && n > 0 {
 		var q strings.Builder
 
-		q.WriteString(fmt.Sprintf("%s NOT IN (", field))
+		_, _ = fmt.Fprintf(&q, "%s NOT IN (", field)
 		for i, v := range value {
-			q.WriteString(fmt.Sprintf("%q", v))
+			_, _ = fmt.Fprintf(&q, "%q", v)
 			if i != n-1 {
 				q.WriteString(", ")
 			}
@@ -161,6 +163,11 @@ func (j *JQL) NotIn(field string, value ...string) *JQL {
 func (j *JQL) OrderBy(field, dir string) *JQL {
 	j.orderBy = fmt.Sprintf("ORDER BY %s %s", field, dir)
 	return j
+}
+
+// HasOrderBy reports whether the query already contains an ORDER BY clause.
+func (j *JQL) HasOrderBy() bool {
+	return j.orderBy != ""
 }
 
 // And combines filter with AND operator.
@@ -179,15 +186,70 @@ func (j *JQL) Or(fn GroupFunc) *JQL {
 
 // Raw sets the passed JQL query along with project context.
 func (j *JQL) Raw(q string) *JQL {
-	q = strings.TrimSpace(q)
-	if q == "" {
+	filters, orderBy := SplitOrderByClause(q)
+	if filters == "" && orderBy == "" {
 		return j
 	}
-	if hasProjectFilter(q) {
+	if hasProjectFilter(filters) {
 		j.filters = j.filters[1:]
 	}
-	j.filters = append(j.filters, q)
+	if filters != "" {
+		j.filters = append(j.filters, filters)
+	}
+	if orderBy != "" {
+		j.orderBy = orderBy
+	}
 	return j
+}
+
+// SplitOrderByClause separates a trailing ORDER BY clause from a JQL query.
+func SplitOrderByClause(q string) (string, string) {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return "", ""
+	}
+
+	matches := orderByRegex.FindAllStringIndex(q, -1)
+	if len(matches) == 0 {
+		return q, ""
+	}
+
+	idx := matches[len(matches)-1][0]
+	filters := strings.TrimSpace(q[:idx])
+	orderBy := strings.TrimSpace(q[idx:])
+
+	if filters == "" {
+		return q, ""
+	}
+
+	return filters, orderBy
+}
+
+// AppendAnd appends clauses before a trailing ORDER BY clause, if present.
+func AppendAnd(q string, clauses ...string) string {
+	filters, orderBy := SplitOrderByClause(q)
+	parts := make([]string, 0, len(clauses)+1)
+
+	if filters != "" {
+		parts = append(parts, filters)
+	}
+
+	for _, clause := range clauses {
+		clause = strings.TrimSpace(clause)
+		if clause != "" {
+			parts = append(parts, clause)
+		}
+	}
+
+	joined := strings.Join(parts, " AND ")
+	if joined == "" {
+		return orderBy
+	}
+	if orderBy != "" {
+		return joined + " " + orderBy
+	}
+
+	return joined
 }
 
 // String returns the constructed query.
@@ -204,7 +266,7 @@ func (j *JQL) mergeFilters(separator string) {
 		qs.WriteString(filter)
 
 		if i != fLen-1 {
-			qs.WriteString(fmt.Sprintf(" %s ", separator))
+			_, _ = fmt.Fprintf(&qs, " %s ", separator)
 		}
 	}
 

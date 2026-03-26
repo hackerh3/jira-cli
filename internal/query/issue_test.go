@@ -432,11 +432,20 @@ func TestIssueGet(t *testing.T) {
 				`type="test" AND resolution="test" AND priority="test" AND reporter="test" ` +
 				`AND assignee="test" AND component="test" AND parent="test" ORDER BY lastViewed ASC`,
 		},
+		{
+			name: "query with jql order by parameter",
+			initialize: func() *Issue {
+				i, err := NewIssue("TEST", &issueFlagParser{jql: "assignee = currentUser() ORDER BY updated DESC"})
+				assert.NoError(t, err)
+				return i
+			},
+			expected: `project="TEST" AND assignee = currentUser() AND issue IN issueHistory() AND issue IN watchedIssues() AND ` +
+				`type="test" AND resolution="test" AND priority="test" AND reporter="test" ` +
+				`AND assignee="test" AND component="test" AND parent="test" ORDER BY updated DESC`,
+		},
 	}
 
 	for _, tc := range cases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

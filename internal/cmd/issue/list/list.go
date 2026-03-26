@@ -13,6 +13,7 @@ import (
 	"github.com/ankitpokhrel/jira-cli/internal/query"
 	"github.com/ankitpokhrel/jira-cli/internal/view"
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
+	"github.com/ankitpokhrel/jira-cli/pkg/jql"
 )
 
 const (
@@ -104,7 +105,7 @@ func loadList(cmd *cobra.Command, args []string) {
 		jqlFlag, err := cmd.Flags().GetString("jql")
 		cmdutil.ExitIfError(err)
 		if jqlFlag != "" {
-			searchQuery = fmt.Sprintf(`%s AND %s`, jqlFlag, searchQuery)
+			searchQuery = jql.AppendAnd(jqlFlag, searchQuery)
 		}
 		cmdutil.ExitIfError(cmd.Flags().Set("jql", searchQuery))
 	}

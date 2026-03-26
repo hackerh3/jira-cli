@@ -299,11 +299,45 @@ func TestJQL(t *testing.T) {
 			},
 			expected: "type=\"Story\" OR summary ~ cli AND project IN (TEST1,TEST2)",
 		},
+		{
+			name: "it keeps raw order by at the end of the query",
+			initialize: func() *JQL {
+				jql := NewJQL("TEST")
+				jql.And(func() {
+					jql.FilterBy("type", "Story").
+						Raw("summary ~ cli ORDER BY updated DESC")
+				})
+				return jql
+			},
+			expected: "project=\"TEST\" AND type=\"Story\" AND summary ~ cli ORDER BY updated DESC",
+		},
+		{
+			name: "it preserves raw order by with project override",
+			initialize: func() *JQL {
+				jql := NewJQL("TEST")
+				jql.And(func() {
+					jql.FilterBy("type", "Story").
+						Raw("project = TEST1 AND summary ~ cli ORDER BY updated DESC")
+				})
+				return jql
+			},
+			expected: "type=\"Story\" AND project = TEST1 AND summary ~ cli ORDER BY updated DESC",
+		},
+		{
+			name: "it keeps raw multi-column order by at the end of the query",
+			initialize: func() *JQL {
+				jql := NewJQL("TEST")
+				jql.And(func() {
+					jql.FilterBy("type", "Story").
+						Raw("summary ~ cli ORDER BY updated DESC, created DESC")
+				})
+				return jql
+			},
+			expected: "project=\"TEST\" AND type=\"Story\" AND summary ~ cli ORDER BY updated DESC, created DESC",
+		},
 	}
 
 	for _, tc := range cases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -311,6 +345,38 @@ func TestJQL(t *testing.T) {
 			assert.Equal(t, tc.expected, jql.String())
 		})
 	}
+}
+
+func TestSplitOrderByClause(t *testing.T) {
+	t.Parallel()
+
+	filters, orderBy := SplitOrderByClause("summary ~ cli ORDER BY updated DESC")
+	assert.Equal(t, "summary ~ cli", filters)
+	assert.Equal(t, "ORDER BY updated DESC", orderBy)
+
+	filters, orderBy = SplitOrderByClause("summary ~ cli ORDER BY updated DESC, created DESC")
+	assert.Equal(t, "summary ~ cli", filters)
+	assert.Equal(t, "ORDER BY updated DESC, created DESC", orderBy)
+
+	filters, orderBy = SplitOrderByClause("summary ~ cli")
+	assert.Equal(t, "summary ~ cli", filters)
+	assert.Equal(t, "", orderBy)
+}
+
+func TestAppendAnd(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(
+		t,
+		`assignee = currentUser() AND text ~ "bug" ORDER BY updated DESC`,
+		AppendAnd(`assignee = currentUser() ORDER BY updated DESC`, `text ~ "bug"`),
+	)
+
+	assert.Equal(
+		t,
+		`assignee = currentUser() AND text ~ "bug" ORDER BY updated DESC, created DESC`,
+		AppendAnd(`assignee = currentUser() ORDER BY updated DESC, created DESC`, `text ~ "bug"`),
+	)
 }
 
 func TestHasProject(t *testing.T) {
@@ -373,8 +439,6 @@ func TestHasProject(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
-
 		t.Run("", func(t *testing.T) {
 			t.Parallel()
 
