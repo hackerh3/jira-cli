@@ -1,10 +1,13 @@
 package tree
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
@@ -13,10 +16,20 @@ import (
 	"github.com/ankitpokhrel/jira-cli/pkg/jira"
 )
 
+var (
+	connector    = color.New(color.Faint).SprintFunc()
+	keyStyle     = color.New(color.FgCyan, color.Bold).SprintFunc()
+	epicKeyStyle = color.New(color.FgCyan, color.Bold, color.Underline).SprintFunc()
+	doneStyle    = color.New(color.FgGreen).SprintFunc()
+	activeStyle  = color.New(color.FgYellow).SprintFunc()
+	blockedStyle = color.New(color.FgRed).SprintFunc()
+	dimStyle     = color.New(color.Faint).SprintFunc()
+)
+
 const (
 	helpText = `Tree displays the full issue hierarchy under an epic.
 
-Shows the epic at root level, its child stories/tasks on the first level,
+Shows the epic at root level, its child issues on the first level,
 and their subtasks on the second level.`
 
 	examples = `# Display epic hierarchy as a tree
@@ -24,6 +37,9 @@ $ jira epic tree EPIC-1
 
 # Display as a flat table
 $ jira epic tree EPIC-1 --plain
+
+# Display as raw JSON
+$ jira epic tree EPIC-1 --raw
 
 # Display as a flat table without headers
 $ jira epic tree EPIC-1 --plain --no-headers`
@@ -36,21 +52,23 @@ func NewCmdTree() *cobra.Command {
 		Short:   "Display full issue hierarchy under an epic",
 		Long:    helpText,
 		Example: examples,
-		Args:    cobra.ExactArgs(1),
-		Run:     run,
+		Annotations: map[string]string{
+			"help:args": "EPIC-KEY\tKey for the issue of type epic, eg: ISSUE-1",
+		},
+		Args: cobra.ExactArgs(1),
+		Run:  run,
 	}
 }
 
 // SetFlags sets flags supported by the tree command.
 func SetFlags(cmd *cobra.Command) {
-	cmd.Flags().Bool("plain", false, "Display output as a flat table")
-	cmd.Flags().Bool("no-headers", false, "Don't display column headers in plain mode")
-	cmd.Flags().Bool("debug", false, "Turn on debug output")
+	cmd.Flags().Bool("plain", false, "Display output in plain mode")
+	cmd.Flags().Bool("no-headers", false, "Don't display table headers in plain mode. Works only with --plain")
+	cmd.Flags().Bool("raw", false, "Print raw JSON output")
 }
 
 func run(cmd *cobra.Command, args []string) {
 	project := viper.GetString("project.key")
-	projectType := viper.GetString("project.type")
 
 	debug, err := cmd.Flags().GetBool("debug")
 	cmdutil.ExitIfError(err)
@@ -58,30 +76,20 @@ func run(cmd *cobra.Command, args []string) {
 	client := api.DefaultClient(debug)
 	key := cmdutil.GetJiraIssueKey(project, args[0])
 
-	epic, err := func() (*jira.Issue, error) {
-		s := cmdutil.Info("Fetching epic...")
+	tree, err := func() (*jira.EpicTree, error) {
+		s := cmdutil.Info("Fetching epic hierarchy...")
 		defer s.Stop()
-		return api.ProxyGetIssue(client, key)
+
+		return client.EpicTree(key)
 	}()
 	cmdutil.ExitIfError(err)
 
-	children, err := func() ([]*jira.Issue, error) {
-		s := cmdutil.Info("Fetching epic issues...")
-		defer s.Stop()
-
-		var resp *jira.SearchResult
-
-		if projectType == jira.ProjectTypeNextGen {
-			resp, err = api.ProxySearch(client, fmt.Sprintf("parent = %s", key), 0, 100)
-		} else {
-			resp, err = client.EpicIssues(key, "", 0, 100)
-		}
-		if err != nil {
-			return nil, err
-		}
-		return resp.Issues, nil
-	}()
+	raw, err := cmd.Flags().GetBool("raw")
 	cmdutil.ExitIfError(err)
+	if raw {
+		outputRawJSON(tree)
+		return
+	}
 
 	plain, err := cmd.Flags().GetBool("plain")
 	cmdutil.ExitIfError(err)
@@ -90,53 +98,112 @@ func run(cmd *cobra.Command, args []string) {
 	cmdutil.ExitIfError(err)
 
 	if plain {
-		renderPlain(epic, children, noHeaders)
-	} else {
-		renderTree(epic, children)
+		renderPlain(tree, noHeaders)
+		return
+	}
+
+	renderTree(tree)
+}
+
+func outputRawJSON(tree *jira.EpicTree) {
+	data, err := json.MarshalIndent(tree, "", "  ")
+	if err != nil {
+		cmdutil.Failed("Failed to marshal epic tree to JSON: %s", err)
+		return
+	}
+
+	fmt.Println(string(data))
+}
+
+func statusColor(status string) string {
+	s := strings.ToLower(status)
+
+	switch {
+	case s == "done" || s == "closed" || s == "resolved" || strings.Contains(s, "complete"):
+		return doneStyle(status)
+	case s == "blocked" || strings.Contains(s, "block"):
+		return blockedStyle(status)
+	case s == "in progress" || s == "in review" || s == "active" || strings.Contains(s, "progress"):
+		return activeStyle(status)
+	default:
+		return dimStyle(status)
 	}
 }
 
-func renderTree(epic *jira.Issue, children []*jira.Issue) {
-	fmt.Printf("%s  %s  [%s]\n", epic.Key, epic.Fields.Summary, epic.Fields.Status.Name)
+func renderTree(tree *jira.EpicTree) {
+	if tree == nil || tree.Epic == nil {
+		return
+	}
 
-	for i, child := range children {
-		last := i == len(children)-1
-		prefix, childPrefix := "├── ", "│   "
-		if last {
-			prefix, childPrefix = "└── ", "    "
+	fmt.Printf("%s [%s] %s\n", epicKeyStyle(tree.Epic.Key), statusColor(tree.Epic.Fields.Status.Name), tree.Epic.Fields.Summary)
+
+	for i, child := range tree.Children {
+		branch := "├── "
+		nextIndent := "│   "
+		if i == len(tree.Children)-1 {
+			branch = "└── "
+			nextIndent = "    "
 		}
 
-		fmt.Printf("%s%s  %s  [%s]\n", prefix, child.Key, child.Fields.Summary, child.Fields.Status.Name)
+		fmt.Printf("%s%s [%s] %s\n",
+			connector(branch),
+			keyStyle(child.Issue.Key),
+			statusColor(child.Issue.Fields.Status.Name),
+			child.Issue.Fields.Summary,
+		)
 
-		for j, sub := range child.Fields.Subtasks {
-			subPrefix := childPrefix + "├── "
-			if j == len(child.Fields.Subtasks)-1 {
-				subPrefix = childPrefix + "└── "
+		for j, subtask := range child.Subtasks {
+			subBranch := "├── "
+			if j == len(child.Subtasks)-1 {
+				subBranch = "└── "
 			}
-			fmt.Printf("%s%s  %s  [%s]\n", subPrefix, sub.Key, sub.Fields.Summary, sub.Fields.Status.Name)
+
+			fmt.Printf("%s%s%s [%s] %s\n",
+				connector(nextIndent),
+				connector(subBranch),
+				keyStyle(subtask.Key),
+				statusColor(subtask.Fields.Status.Name),
+				subtask.Fields.Summary,
+			)
 		}
 	}
 }
 
-func renderPlain(epic *jira.Issue, children []*jira.Issue, noHeaders bool) {
+func renderPlain(tree *jira.EpicTree, noHeaders bool) {
+	if tree == nil || tree.Epic == nil {
+		return
+	}
+
 	w := tabwriter.NewWriter(os.Stdout, 0, 8, 1, '\t', 0)
 
 	if !noHeaders {
-		fmt.Fprintln(w, "TYPE\tKEY\tSUMMARY\tSTATUS\tPARENT")
+		_, _ = fmt.Fprintln(w, strings.Join([]string{"KEY", "TYPE", "STATUS", "SUMMARY", "PARENT"}, "\t"))
 	}
 
-	fmt.Fprintf(w, "%s\t%s\t%s\t%s\t\n",
-		epic.Fields.IssueType.Name, epic.Key, epic.Fields.Summary, epic.Fields.Status.Name)
+	writePlainRow(w, tree.Epic, "")
 
-	for _, child := range children {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			child.Fields.IssueType.Name, child.Key, child.Fields.Summary, child.Fields.Status.Name, epic.Key)
-
-		for _, sub := range child.Fields.Subtasks {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				sub.Fields.IssueType.Name, sub.Key, sub.Fields.Summary, sub.Fields.Status.Name, child.Key)
+	for _, child := range tree.Children {
+		writePlainRow(w, child.Issue, tree.Epic.Key)
+		for _, subtask := range child.Subtasks {
+			writePlainRow(w, subtask, child.Issue.Key)
 		}
 	}
 
 	_ = w.Flush()
+}
+
+func writePlainRow(w *tabwriter.Writer, issue *jira.Issue, parent string) {
+	if issue == nil {
+		return
+	}
+
+	_, _ = fmt.Fprintf(
+		w,
+		"%s\t%s\t%s\t%s\t%s\n",
+		issue.Key,
+		issue.Fields.IssueType.Name,
+		issue.Fields.Status.Name,
+		issue.Fields.Summary,
+		parent,
+	)
 }
