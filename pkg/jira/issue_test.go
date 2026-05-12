@@ -585,6 +585,42 @@ func TestGetIssueComment(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestGetSubtasks(t *testing.T) {
+	var notFound bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/rest/api/2/issue/TEST-1", r.URL.Path)
+		assert.Equal(t, "fields=subtasks", r.URL.RawQuery)
+		assert.Equal(t, "application/json", r.Header.Get("Accept"))
+
+		if notFound {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"fields":{"subtasks":[{"key":"TEST-2","fields":{"issuetype":{"name":"Impact Analysis"},"summary":"Impact task","status":{"name":"To Do"}}}]}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{Server: server.URL}, WithTimeout(3*time.Second))
+
+	subtasks, err := client.GetSubtasks("TEST-1")
+	assert.NoError(t, err)
+	assert.Len(t, subtasks, 1)
+	assert.Equal(t, "TEST-2", subtasks[0].Key)
+	assert.Equal(t, "Impact Analysis", subtasks[0].Fields.IssueType.Name)
+	assert.Equal(t, "Impact task", subtasks[0].Fields.Summary)
+	assert.Equal(t, "To Do", subtasks[0].Fields.Status.Name)
+
+	notFound = true
+
+	subtasks, err = client.GetSubtasks("TEST-1")
+	assert.Nil(t, subtasks)
+	assert.Error(t, err)
+}
+
 func TestUpdateIssueComment(t *testing.T) {
 	var unexpectedStatusCode bool
 

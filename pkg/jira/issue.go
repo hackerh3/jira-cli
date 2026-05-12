@@ -372,6 +372,32 @@ func (c *Client) GetIssueComment(key, commentID string) (*IssueComment, error) {
 	return &comment, nil
 }
 
+// GetSubtasks fetches subtasks of an issue using GET /issue/{key}?fields=subtasks.
+func (c *Client) GetSubtasks(key string) ([]Issue, error) {
+	path := fmt.Sprintf("/issue/%s?fields=subtasks", key)
+	res, err := c.GetV2(context.Background(), path, Header{
+		"Accept": "application/json",
+	})
+	if err != nil {
+		return nil, err
+	}
+	if res == nil {
+		return nil, ErrEmptyResponse
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	if res.StatusCode != http.StatusOK {
+		return nil, formatUnexpectedResponse(res)
+	}
+
+	var issue Issue
+	if err := json.NewDecoder(res.Body).Decode(&issue); err != nil {
+		return nil, err
+	}
+
+	return issue.Fields.Subtasks, nil
+}
+
 // UpdateIssueComment updates a comment using PUT /issue/{key}/comment/{commentID}.
 func (c *Client) UpdateIssueComment(key, commentID, comment string, internal bool) error {
 	body, err := json.Marshal(&issueCommentRequest{

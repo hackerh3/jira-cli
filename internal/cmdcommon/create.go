@@ -25,6 +25,7 @@ const (
 type CreateParams struct {
 	Name             string
 	IssueType        string
+	NoDuplicateCheck bool
 	ParentIssueKey   string
 	Summary          string
 	Body             string
@@ -55,6 +56,7 @@ func SetCreateFlags(cmd *cobra.Command, prefix string) {
 		cmd.Flags().StringP("name", "n", "", "Epic name")
 	} else {
 		cmd.Flags().StringP("type", "t", "", "Issue type")
+		cmd.Flags().Bool("no-duplicate-check", false, "Skip duplicate subtask type warning when creating a sub-task")
 		cmd.Flags().StringP("parent", "P", "", `Parent issue key can be used to attach epic to an issue.
 And, this field is mandatory when creating a sub-task.`)
 	}

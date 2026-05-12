@@ -1,8 +1,10 @@
 package create
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -117,6 +119,11 @@ func create(cmd *cobra.Command, _ []string) {
 
 	params.Reporter = cmdcommon.GetRelevantUser(client, project, params.Reporter)
 	params.Assignee = cmdcommon.GetRelevantUser(client, project, params.Assignee)
+	cc.params = params
+
+	if err := cc.warnOnDuplicateSubtaskType(); err != nil {
+		cmdutil.ExitIfError(err)
+	}
 
 	issue, err := func() (*jira.CreateResponse, error) {
 		s := cmdutil.Info("Creating an issue...")
@@ -513,8 +520,12 @@ func parseFlags(flags query.FlagParser) *cmdcommon.CreateParams {
 	debug, err := flags.GetBool("debug")
 	cmdutil.ExitIfError(err)
 
+	noDuplicateCheck, err := flags.GetBool("no-duplicate-check")
+	cmdutil.ExitIfError(err)
+
 	return &cmdcommon.CreateParams{
 		IssueType:        issueType,
+		NoDuplicateCheck: noDuplicateCheck,
 		ParentIssueKey:   parentIssueKey,
 		Summary:          summary,
 		Body:             body,
@@ -533,4 +544,91 @@ func parseFlags(flags query.FlagParser) *cmdcommon.CreateParams {
 		NoInput:          noInput,
 		Debug:            debug,
 	}
+}
+
+func (cc *createCmd) warnOnDuplicateSubtaskType() error {
+	if cc.params.NoDuplicateCheck || cc.params.ParentIssueKey == "" || !cc.isSubtaskIssueType() {
+		return nil
+	}
+
+	subtasks, err := cc.client.GetSubtasks(cc.params.ParentIssueKey)
+	if err != nil {
+		cmdutil.Warn(
+			"Warning: unable to check existing subtasks for %s: %s",
+			cc.params.ParentIssueKey,
+			err,
+		)
+		return nil
+	}
+
+	targetType := cc.issueTypeName()
+	for _, subtask := range subtasks {
+		if !strings.EqualFold(subtask.Fields.IssueType.Name, targetType) {
+			continue
+		}
+
+		message := fmt.Sprintf(
+			"Warning: parent %s already has a subtask of type %s (%s). Proceed? [y/N]",
+			cc.params.ParentIssueKey,
+			targetType,
+			subtask.Key,
+		)
+		if cc.params.NoInput {
+			cmdutil.Warn(message)
+			return nil
+		}
+
+		proceed, err := promptForConfirmation(message)
+		if err != nil {
+			return err
+		}
+		if !proceed {
+			cmdutil.Failed("Action aborted")
+		}
+
+		return nil
+	}
+
+	return nil
+}
+
+func (cc *createCmd) issueTypeName() string {
+	for _, issueType := range cc.issueTypes {
+		if strings.EqualFold(cc.params.IssueType, issueType.Name) ||
+			(issueType.Handle != "" && strings.EqualFold(cc.params.IssueType, issueType.Handle)) {
+			return issueType.Name
+		}
+	}
+
+	return cc.params.IssueType
+}
+
+func (cc *createCmd) isSubtaskIssueType() bool {
+	for _, issueType := range cc.issueTypes {
+		if !issueType.Subtask {
+			continue
+		}
+
+		if strings.EqualFold(cc.params.IssueType, issueType.Name) ||
+			(issueType.Handle != "" && strings.EqualFold(cc.params.IssueType, issueType.Handle)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func promptForConfirmation(message string) (bool, error) {
+	_, err := fmt.Fprintf(os.Stderr, "%s ", message)
+	if err != nil {
+		return false, err
+	}
+
+	answer, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil {
+		return false, err
+	}
+
+	answer = strings.TrimSpace(answer)
+	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes"), nil
 }
