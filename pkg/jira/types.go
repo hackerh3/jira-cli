@@ -113,7 +113,7 @@ type IssueFields struct {
 		} `json:"comments"`
 		Total int `json:"total"`
 	} `json:"comment"`
-	Subtasks   []Issue
+	Subtasks   []Issue `json:"subtasks"`
 	IssueLinks []struct {
 		ID       string `json:"id"`
 		LinkType struct {

@@ -7,6 +7,7 @@ import (
 	"github.com/ankitpokhrel/jira-cli/internal/cmd/epic/create"
 	"github.com/ankitpokhrel/jira-cli/internal/cmd/epic/list"
 	"github.com/ankitpokhrel/jira-cli/internal/cmd/epic/remove"
+	"github.com/ankitpokhrel/jira-cli/internal/cmd/epic/tree"
 )
 
 const helpText = `Epic manage epics in a given project. See available commands below.`
@@ -26,11 +27,13 @@ func NewCmdEpic() *cobra.Command {
 	cc := create.NewCmdCreate()
 	ac := add.NewCmdAdd()
 	rc := remove.NewCmdRemove()
+	tc := tree.NewCmdTree()
 
-	cmd.AddCommand(lc, cc, ac, rc)
+	cmd.AddCommand(lc, cc, ac, rc, tc)
 
 	list.SetFlags(lc)
 	create.SetFlags(cc)
+	tree.SetFlags(tc)
 
 	return &cmd
 }
