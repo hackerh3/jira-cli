@@ -16,6 +16,7 @@ import (
 // DisplayFormat is a issue display type.
 type DisplayFormat struct {
 	Plain        bool
+	Compact      bool
 	Delimiter    string
 	CSV          bool
 	NoHeaders    bool
@@ -39,6 +40,10 @@ type IssueList struct {
 
 // Render renders the view.
 func (l *IssueList) Render() error {
+	if l.Display.Compact {
+		return l.renderCompact(os.Stdout)
+	}
+
 	// Prioritize CSV format when explicitly requested
 	if l.Display.CSV {
 		w := os.Stdout
@@ -143,6 +148,35 @@ func (l *IssueList) renderPlain(w io.Writer, delimeter string) error {
 // renderCSV renders issues in csv format.
 func (l *IssueList) renderCSV(w io.Writer) error {
 	return renderCSV(w, l.data())
+}
+
+// renderCompact renders issues in a compact LLM-friendly format.
+// Only essential fields are included to minimize token usage.
+func (l *IssueList) renderCompact(w io.Writer) error {
+	var s strings.Builder
+
+	for idx, iss := range l.Data {
+		if idx > 0 {
+			s.WriteString("\n")
+		}
+		fmt.Fprintf(&s, "Key: %s\n", iss.Key)
+		fmt.Fprintf(&s, "Type: %s\n", iss.Fields.IssueType.Name)
+		fmt.Fprintf(&s, "Summary: %s\n", iss.Fields.Summary)
+		fmt.Fprintf(&s, "Status: %s\n", iss.Fields.Status.Name)
+		fmt.Fprintf(&s, "Priority: %s\n", iss.Fields.Priority.Name)
+		if iss.Fields.Assignee.Name != "" {
+			fmt.Fprintf(&s, "Assignee: %s\n", iss.Fields.Assignee.Name)
+		}
+		if len(iss.Fields.Labels) > 0 {
+			fmt.Fprintf(&s, "Labels: %s\n", strings.Join(iss.Fields.Labels, ", "))
+		}
+		if iss.Fields.Parent != nil && iss.Fields.Parent.Key != "" {
+			fmt.Fprintf(&s, "Parent: %s\n", iss.Fields.Parent.Key)
+		}
+	}
+
+	_, err := fmt.Fprint(w, s.String())
+	return err
 }
 
 func (*IssueList) validColumnsMap() map[string]struct{} {

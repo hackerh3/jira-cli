@@ -55,6 +55,9 @@ type Issue struct {
 
 // Render renders the view.
 func (i Issue) Render() error {
+	if i.Display.Compact {
+		return i.renderCompact(os.Stdout)
+	}
 	if i.Display.Plain || tui.IsDumbTerminal() || tui.IsNotTTY() {
 		return i.renderPlain(os.Stdout)
 	}
@@ -452,5 +455,72 @@ func (i Issue) renderPlain(w io.Writer) error {
 		return err
 	}
 	_, err = fmt.Fprint(w, out)
+	return err
+}
+
+func (i Issue) renderCompact(w io.Writer) error {
+	var s strings.Builder
+
+	d := i.Data
+	fmt.Fprintf(&s, "Key: %s\n", d.Key)
+	fmt.Fprintf(&s, "Type: %s\n", d.Fields.IssueType.Name)
+	fmt.Fprintf(&s, "Summary: %s\n", d.Fields.Summary)
+	fmt.Fprintf(&s, "Status: %s\n", d.Fields.Status.Name)
+	fmt.Fprintf(&s, "Priority: %s\n", d.Fields.Priority.Name)
+	if d.Fields.Assignee.Name != "" {
+		fmt.Fprintf(&s, "Assignee: %s\n", d.Fields.Assignee.Name)
+	}
+	if len(d.Fields.Labels) > 0 {
+		fmt.Fprintf(&s, "Labels: %s\n", strings.Join(d.Fields.Labels, ", "))
+	}
+	if d.Fields.Parent != nil && d.Fields.Parent.Key != "" {
+		fmt.Fprintf(&s, "Parent: %s\n", d.Fields.Parent.Key)
+	}
+
+	desc := i.description()
+	if desc != "" {
+		fmt.Fprintf(&s, "\nDescription:\n%s\n", desc)
+	}
+
+	if len(d.Fields.Subtasks) > 0 {
+		fmt.Fprintf(&s, "\nSubtasks:\n")
+		for _, st := range d.Fields.Subtasks {
+			fmt.Fprintf(&s, "- %s %s [%s]\n", st.Key, st.Fields.Summary, st.Fields.Status.Name)
+		}
+	}
+
+	if len(d.Fields.IssueLinks) > 0 {
+		fmt.Fprintf(&s, "\nLinked Issues:\n")
+		for _, link := range d.Fields.IssueLinks {
+			if link.InwardIssue != nil {
+				fmt.Fprintf(&s, "- %s: %s %s\n", link.LinkType.Inward, link.InwardIssue.Key, link.InwardIssue.Fields.Summary)
+			} else if link.OutwardIssue != nil {
+				fmt.Fprintf(&s, "- %s: %s %s\n", link.LinkType.Outward, link.OutwardIssue.Key, link.OutwardIssue.Fields.Summary)
+			}
+		}
+	}
+
+	total := d.Fields.Comment.Total
+	if total > 0 && i.Options.NumComments > 0 {
+		limit := min(int(i.Options.NumComments), total)
+		fmt.Fprintf(&s, "\nComments (%d total, showing %d):\n", total, limit)
+		for idx := total - 1; idx >= total-limit; idx-- {
+			c := d.Fields.Comment.Comments[idx]
+			author := c.Author.DisplayName
+			if author == "" {
+				author = c.Author.Name
+			}
+			var body string
+			if adfNode, ok := c.Body.(*adf.ADF); ok {
+				body = adf.NewTranslator(adfNode, adf.NewMarkdownTranslator()).Translate()
+			} else {
+				body = c.Body.(string)
+				body = md.FromJiraMD(body)
+			}
+			fmt.Fprintf(&s, "\n[%s] %s:\n%s\n", c.Created, author, body)
+		}
+	}
+
+	_, err := fmt.Fprint(w, s.String())
 	return err
 }

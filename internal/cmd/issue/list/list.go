@@ -157,6 +157,9 @@ func loadList(cmd *cobra.Command, args []string) {
 	noTruncate, err := cmd.Flags().GetBool("no-truncate")
 	cmdutil.ExitIfError(err)
 
+	compact, err := cmd.Flags().GetBool("compact")
+	cmdutil.ExitIfError(err)
+
 	fixedColumns, err := cmd.Flags().GetUint("fixed-columns")
 	cmdutil.ExitIfError(err)
 
@@ -180,6 +183,7 @@ func loadList(cmd *cobra.Command, args []string) {
 		},
 		Display: view.DisplayFormat{
 			Plain:        plain,
+			Compact:      compact,
 			Delimiter:    delimiter,
 			CSV:          csv,
 			NoHeaders:    noHeaders,
@@ -241,6 +245,7 @@ func SetFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("reverse", false, "Reverse the display order (default \"DESC\")")
 	cmd.Flags().String("paginate", "0:100", "Paginate the result. Max 100 at a time, format: <from>:<limit> where <from> is optional")
 	cmd.Flags().Bool("plain", false, "Display output in plain mode")
+	cmd.Flags().Bool("compact", false, "Display compact LLM-friendly output with essential fields only")
 	cmd.Flags().Bool("no-headers", false, "Don't display table headers in plain mode. Works only with --plain")
 	cmd.Flags().Bool("no-truncate", false, "Show all available columns in plain mode. Works only with --plain")
 	cmd.Flags().String("delimiter", "\t", "Custom delimeter for columns in plain mode. Works only with --plain")
