@@ -11,6 +11,8 @@ import (
 
 const epicTreeMaxResults uint = 100
 
+const jqlChunkSize = 50
+
 // EpicTree represents the full issue hierarchy for an epic.
 type EpicTree struct {
 	Epic     *Issue           `json:"epic"`
@@ -53,7 +55,7 @@ func (c *Client) EpicTree(key string) (*EpicTree, error) {
 		return tree, nil
 	}
 
-	for _, chunk := range chunkStrings(subtaskParentKeys, 50) {
+	for _, chunk := range chunkStrings(subtaskParentKeys, jqlChunkSize) {
 		subtasks, err := c.searchV2All(fmt.Sprintf("parent in (%s) ORDER BY created ASC", strings.Join(chunk, ", ")))
 		if err != nil {
 			return nil, err

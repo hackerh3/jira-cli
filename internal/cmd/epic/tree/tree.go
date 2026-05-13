@@ -43,6 +43,8 @@ $ jira epic tree EPIC-1 --raw
 
 # Display as a flat table without headers
 $ jira epic tree EPIC-1 --plain --no-headers`
+
+	tabMinWidth = 8
 )
 
 // NewCmdTree is a tree command.
@@ -174,7 +176,7 @@ func renderPlain(tree *jira.EpicTree, noHeaders bool) {
 		return
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 8, 1, '\t', 0)
+	w := tabwriter.NewWriter(os.Stdout, 0, tabMinWidth, 1, '\t', 0)
 
 	if !noHeaders {
 		_, _ = fmt.Fprintln(w, strings.Join([]string{"KEY", "TYPE", "STATUS", "SUMMARY", "PARENT"}, "\t"))
