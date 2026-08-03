@@ -176,27 +176,25 @@ type editCmd struct {
 }
 
 func (ec *editCmd) getQuestions(originalBody string) []*survey.Question {
-	var qs []*survey.Question
-
 	// Skip editor if noInput is set or body was already provided via flag.
 	if ec.params.noInput || ec.params.body != "" {
-		return qs
+		return nil
 	}
 
-	qs = append(qs, &survey.Question{
-		Name: "body",
-		Prompt: &surveyext.JiraEditor{
-			Editor: &survey.Editor{
-				Message:       "Comment body",
-				Default:       originalBody,
-				HideDefault:   true,
-				AppendDefault: true,
+	return []*survey.Question{
+		{
+			Name: "body",
+			Prompt: &surveyext.JiraEditor{
+				Editor: &survey.Editor{
+					Message:       "Comment body",
+					Default:       originalBody,
+					HideDefault:   true,
+					AppendDefault: true,
+				},
+				BlankAllowed: false,
 			},
-			BlankAllowed: false,
 		},
-	})
-
-	return qs
+	}
 }
 
 func getNextAction() *survey.Question {
