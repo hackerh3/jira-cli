@@ -1,3 +1,5 @@
+## [1.11.1](https://github.com/hackerh3/jira-cli/compare/1.11.0...1.11.1) (2026-08-05)
+
 ## [1.11.0](https://github.com/hackerh3/jira-cli/compare/1.10.0...1.11.0) (2026-05-13)
 
 ### Features
