@@ -3,6 +3,11 @@ name: Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and upload binaries for (repairs a release missing assets)'
+        required: true
 
 permissions:
   contents: write
@@ -12,6 +17,7 @@ permissions:
 jobs:
   release:
     name: Semantic Release
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       new_release_published: ${{ steps.semantic.outputs.new_release_published }}
@@ -42,19 +48,23 @@ jobs:
   goreleaser:
     name: Build & Upload Binaries
     needs: release
-    if: needs.release.outputs.new_release_published == 'true'
+    if: |
+      always() && (
+        github.event_name == 'workflow_dispatch' ||
+        (needs.release.result == 'success' && needs.release.outputs.new_release_published == 'true')
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ needs.release.outputs.new_release_version }}
+          ref: ${{ inputs.tag || needs.release.outputs.new_release_version }}
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '^1.25.6'
+          go-version: '^1.26.5'
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
