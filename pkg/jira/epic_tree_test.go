@@ -29,18 +29,15 @@ func TestEpicTree(t *testing.T) {
 				}
 			}`))
 		case 1:
-			assert.Equal(t, "/rest/api/2/search", r.URL.Path)
+			assert.Equal(t, "/rest/api/3/search/jql", r.URL.Path)
 			assert.Equal(t, url.Values{
 				"fields":     []string{"*all"},
 				"jql":        []string{`"Epic Link" = EPIC-1 OR parent = EPIC-1 ORDER BY created ASC`},
 				"maxResults": []string{"100"},
-				"startAt":    []string{"0"},
 			}, r.URL.Query())
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{
-				"startAt":0,
-				"maxResults":100,
-				"total":2,
+				"isLast":true,
 				"issues":[
 					{
 						"key":"STORY-1",
@@ -71,18 +68,15 @@ func TestEpicTree(t *testing.T) {
 				]
 			}`))
 		case 2:
-			assert.Equal(t, "/rest/api/2/search", r.URL.Path)
+			assert.Equal(t, "/rest/api/3/search/jql", r.URL.Path)
 			assert.Equal(t, url.Values{
 				"fields":     []string{"*all"},
 				"jql":        []string{"parent in (STORY-1, TASK-1) ORDER BY created ASC"},
 				"maxResults": []string{"100"},
-				"startAt":    []string{"0"},
 			}, r.URL.Query())
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{
-				"startAt":0,
-				"maxResults":100,
-				"total":2,
+				"isLast":true,
 				"issues":[
 					{
 						"key":"SUB-1",
@@ -158,25 +152,24 @@ func TestEpicTreePagination(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"key":"EPIC-9","fields":{"summary":"Epic","issuetype":{"name":"Epic"},"status":{"name":"To Do"}}}`))
 		case 1:
-			assert.Equal(t, "/rest/api/2/search", r.URL.Path)
-			assert.Equal(t, "0", r.URL.Query().Get("startAt"))
+			assert.Equal(t, "/rest/api/3/search/jql", r.URL.Path)
+			assert.Empty(t, r.URL.Query().Get("nextPageToken"))
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"startAt":0,"maxResults":100,"total":101,"issues":[{"key":"STORY-1","fields":{"summary":"Story 1","issuetype":{"name":"Story"},"status":{"name":"To Do"}}}]}`))
+			_, _ = w.Write([]byte(`{"isLast":false,"nextPageToken":"page2","issues":[{"key":"STORY-1","fields":{"summary":"Story 1","issuetype":{"name":"Story"},"status":{"name":"To Do"}}}]}`))
 		case 2:
-			assert.Equal(t, "/rest/api/2/search", r.URL.Path)
-			assert.Equal(t, "100", r.URL.Query().Get("startAt"))
+			assert.Equal(t, "/rest/api/3/search/jql", r.URL.Path)
+			assert.Equal(t, "page2", r.URL.Query().Get("nextPageToken"))
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"startAt":100,"maxResults":100,"total":101,"issues":[{"key":"STORY-2","fields":{"summary":"Story 2","issuetype":{"name":"Story"},"status":{"name":"Done"}}}]}`))
+			_, _ = w.Write([]byte(`{"isLast":true,"issues":[{"key":"STORY-2","fields":{"summary":"Story 2","issuetype":{"name":"Story"},"status":{"name":"Done"}}}]}`))
 		case 3:
-			assert.Equal(t, "/rest/api/2/search", r.URL.Path)
+			assert.Equal(t, "/rest/api/3/search/jql", r.URL.Path)
 			assert.Equal(t, url.Values{
 				"fields":     []string{"*all"},
 				"jql":        []string{"parent in (STORY-1, STORY-2) ORDER BY created ASC"},
 				"maxResults": []string{"100"},
-				"startAt":    []string{"0"},
 			}, r.URL.Query())
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"startAt":0,"maxResults":100,"total":0,"issues":[]}`))
+			_, _ = w.Write([]byte(`{"isLast":true,"issues":[]}`))
 		default:
 			t.Fatalf("unexpected request %d: %s", call, r.URL.String())
 		}
@@ -196,4 +189,52 @@ func TestEpicTreePagination(t *testing.T) {
 	assert.Equal(t, "STORY-1", tree.Children[0].Issue.Key)
 	assert.Equal(t, "STORY-2", tree.Children[1].Issue.Key)
 	assert.Equal(t, 4, call)
+}
+
+func TestEpicTreeServerFallbackToV2(t *testing.T) {
+	call := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch call {
+		case 0:
+			assert.Equal(t, "/rest/api/2/issue/EPIC-1", r.URL.Path)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"key":"EPIC-1","fields":{"summary":"Epic","issuetype":{"name":"Epic"},"status":{"name":"To Do"}}}`))
+		case 1:
+			// Server/DC has no v3 API.
+			assert.Equal(t, "/rest/api/3/search/jql", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		case 2:
+			assert.Equal(t, "/rest/api/2/search", r.URL.Path)
+			assert.Equal(t, "0", r.URL.Query().Get("startAt"))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"startAt":0,"maxResults":100,"total":1,"issues":[{"key":"STORY-1","fields":{"summary":"Story 1","issuetype":{"name":"Story"},"status":{"name":"To Do"}}}]}`))
+		case 3:
+			assert.Equal(t, "/rest/api/3/search/jql", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		case 4:
+			assert.Equal(t, "/rest/api/2/search", r.URL.Path)
+			assert.Equal(t, "parent in (STORY-1) ORDER BY created ASC", r.URL.Query().Get("jql"))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"startAt":0,"maxResults":100,"total":0,"issues":[]}`))
+		default:
+			t.Fatalf("unexpected request %d: %s", call, r.URL.String())
+		}
+
+		call++
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{Server: server.URL}, WithTimeout(3*time.Second))
+
+	tree, err := client.EpicTree("EPIC-1")
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	assert.Len(t, tree.Children, 1)
+	assert.Equal(t, "STORY-1", tree.Children[0].Issue.Key)
+	assert.Equal(t, 5, call)
 }
