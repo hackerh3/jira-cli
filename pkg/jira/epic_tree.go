@@ -32,7 +32,7 @@ func (c *Client) EpicTree(key string) (*EpicTree, error) {
 		return nil, err
 	}
 
-	children, err := c.searchV2All(fmt.Sprintf(`"Epic Link" = %s OR parent = %s ORDER BY created ASC`, key, key))
+	children, err := c.epicTreeSearchAll(fmt.Sprintf(`"Epic Link" = %s OR parent = %s ORDER BY created ASC`, key, key))
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ func (c *Client) EpicTree(key string) (*EpicTree, error) {
 	}
 
 	for _, chunk := range chunkStrings(subtaskParentKeys, jqlChunkSize) {
-		subtasks, err := c.searchV2All(fmt.Sprintf("parent in (%s) ORDER BY created ASC", strings.Join(chunk, ", ")))
+		subtasks, err := c.epicTreeSearchAll(fmt.Sprintf("parent in (%s) ORDER BY created ASC", strings.Join(chunk, ", ")))
 		if err != nil {
 			return nil, err
 		}
@@ -76,6 +76,71 @@ func (c *Client) EpicTree(key string) (*EpicTree, error) {
 	}
 
 	return tree, nil
+}
+
+// epicTreeSearchAll fetches every page for a JQL query. Jira Cloud removed the
+// classic /search endpoints (CHANGE-2046), so the token-paginated /search/jql
+// API is tried first; Server/DC has no v3 API and falls back to v2 /search.
+func (c *Client) epicTreeSearchAll(jql string) ([]*Issue, error) {
+	issues, v3Unavailable, err := c.searchV3All(jql)
+	if err != nil && v3Unavailable {
+		return c.searchV2All(jql)
+	}
+	return issues, err
+}
+
+type searchV3PageResult struct {
+	Issues        []*Issue `json:"issues"`
+	NextPageToken string   `json:"nextPageToken"`
+	IsLast        bool     `json:"isLast"`
+}
+
+func (c *Client) searchV3All(jql string) ([]*Issue, bool, error) {
+	var (
+		issues []*Issue
+		token  string
+	)
+
+	for {
+		path := fmt.Sprintf("/search/jql?jql=%s&maxResults=%d&fields=*all", url.QueryEscape(jql), epicTreeMaxResults)
+		if token != "" {
+			path += "&nextPageToken=" + url.QueryEscape(token)
+		}
+
+		res, err := c.Get(context.Background(), path, nil)
+		if err != nil {
+			return nil, false, err
+		}
+		if res == nil {
+			return nil, false, ErrEmptyResponse
+		}
+
+		if res.StatusCode == http.StatusNotFound || res.StatusCode == http.StatusGone {
+			_ = res.Body.Close()
+			return nil, true, fmt.Errorf("jira: /search/jql unavailable (%d)", res.StatusCode)
+		}
+		if res.StatusCode != http.StatusOK {
+			err := formatUnexpectedResponse(res)
+			_ = res.Body.Close()
+			return nil, false, err
+		}
+
+		var out searchV3PageResult
+		err = json.NewDecoder(res.Body).Decode(&out)
+		_ = res.Body.Close()
+		if err != nil {
+			return nil, false, err
+		}
+
+		issues = append(issues, out.Issues...)
+
+		if out.IsLast || out.NextPageToken == "" || len(out.Issues) == 0 {
+			break
+		}
+		token = out.NextPageToken
+	}
+
+	return issues, false, nil
 }
 
 func (c *Client) searchV2All(jql string) ([]*Issue, error) {
