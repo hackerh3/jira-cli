@@ -12,7 +12,8 @@ Upstream has not cut a release since **v1.7.0 (2025-08-30)**, so upstream state 
 
 | Fork release | Date | Upstream base commit | Upstream state | Notes |
 |---|---|---|---|---|
-| unreleased (`main`) | 2026-08-03 | `1f3b2ef` | v1.7.0+15 | UTF-8 wiki parser fix, JQL preserved with `--show-all-issues`, epic add/remove without admin, `--plain` implies table, Go 1.26, golangci-lint 2.12 |
+| 1.11.2 | 2026-08-17 | `1f3b2ef` | v1.7.0+15 | epic tree migrated to /search/jql (cloud 410 fix) |
+| 1.11.1 | 2026-08-05 | `1f3b2ef` | v1.7.0+15 | UTF-8 wiki parser fix, JQL preserved with `--show-all-issues`, epic add/remove without admin, `--plain` implies table, Go 1.26, golangci-lint 2.12 |
 | 1.11.0 | 2026-05-13 | `396933d` | v1.7.0+6 | |
 | 1.10.0 | 2026-05-13 | `396933d` | v1.7.0+6 | |
 | 1.9.0 | 2026-05-13 | `396933d` | v1.7.0+6 | |
@@ -45,4 +46,5 @@ git rev-list --left-right --count upstream/main...main   # left = commits we are
 git log --oneline main..upstream/main
 ```
 
-`.github/workflows/upstream-watch.yml` runs this daily and opens a tracking issue.
+Sync, verification, release, and this matrix are automated by the on-prem GitLab project
+`hhaecker/jira-cli-sync` (gitlab.vi.vector.int); failures surface as Jira tickets in XPE3.
