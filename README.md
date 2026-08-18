@@ -3,9 +3,26 @@
 </div>
 
 > **Fork notice** — This is a maintained fork of [ankitpokhrel/jira-cli](https://github.com/ankitpokhrel/jira-cli).
-> It adds move-project, comment editing, Deviniti template support, and broken-workflow detection.
 > Releases use versionless tags (`1.8.0`) to avoid collision with upstream (`v1.8.0`).
 > Install from **this repo's** [releases page](https://github.com/hackerh3/jira-cli/releases).
+> Upstream changes are merged, tested, and released automatically; see [UPSTREAM.md](UPSTREAM.md).
+
+## Why this fork
+
+| Feature | What it adds |
+|---|---|
+| `jira epic tree` | full issue hierarchy under an epic (works on Jira Cloud's current search API) |
+| `jira issue comment edit` | edit existing comments |
+| `jira issue move-project` | move issues across projects via the JSP wizard, incl. broken-workflow detection |
+| `jira issue view --compact` | LLM-friendly minimal output |
+| `--jira-template` | create issues from Deviniti server-side templates |
+| Raw JQL ordering | `-q '… ORDER BY …'` is preserved instead of being overwritten |
+| Early upstream fixes | upstream merges ship in fork releases without waiting for an upstream release |
+
+<!-- sync:highlights:start -->
+**Latest release 1.11.2:**
+- **epic:** migrate tree search to /search/jql (cloud 410 Gone)
+<!-- sync:highlights:end -->
 
 <div>
     <p align="center">
